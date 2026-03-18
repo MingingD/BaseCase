@@ -229,6 +229,81 @@
   cursor: not-allowed;
 }
 
+/* ── BaseCase additions ─────────────────────────────────────────────────────── */
+
+.disclaimer-banner {
+  margin-top: 0.5rem;
+  padding: 0.4rem 1rem;
+  background: #fff8e1;
+  border: 1px solid #f9a825;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: #5f4c00;
+  font-family: 'Open Sans', sans-serif;
+  text-align: center;
+}
+
+.category-pills {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.pill {
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-family: 'Open Sans', sans-serif;
+  color: #fff;
+}
+
+.pill-injury     { background: #e74c3c; }
+.pill-employment { background: #3498db; }
+.pill-copyright  { background: #2ecc71; }
+
+.detected-category {
+  margin-top: 1rem;
+  font-size: 0.95rem;
+  font-family: 'Open Sans', sans-serif;
+  color: #3c4043;
+}
+
+.confidence {
+  color: #5f6368;
+  font-size: 0.85rem;
+}
+
+.category-badge {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #fff;
+  font-family: 'Open Sans', sans-serif;
+  text-transform: capitalize;
+}
+
+.similarity-score {
+  font-size: 0.85rem;
+  color: #5f6368;
+  font-family: 'Open Sans', sans-serif;
+}
+
+.courtlistener-link {
+  display: inline-block;
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+  color: #1a73e8;
+  text-decoration: none;
+  font-family: 'Open Sans', sans-serif;
+}
+
+.courtlistener-link:hover {
+  text-decoration: underline;
+}
+
 @media (max-width: 768px) {
   .google-colors h1 { font-size: 3rem; }
   .input-box { width: 90%; }
