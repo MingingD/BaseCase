@@ -18,14 +18,13 @@ def main():
         text = row.get("text") or row.get("opinion_text") or ""
         text = text[:3000]
 
-        case_name = row.get("case_name") or row.get("name") or f"Case {i}"
-        category = row.get("category") or row.get("practice_area") or ""
-        opinion_id = row.get("opinion_id")
-        # Always use CourtListener canonical URL when we have an opinion_id
-        if opinion_id:
-            url = f"https://www.courtlistener.com/opinion/{opinion_id}/"
-        else:
-            url = row.get("viewable_url") or ""
+        # Derive case name from the URL slug (new schema has no case_name field)
+        absolute_url = row.get("absolute_url") or ""
+        slug = [s for s in absolute_url.split("/") if s][-1] if absolute_url else ""
+        case_name = slug.replace("-", " ").title() if slug else f"Case {i}"
+
+        category = row.get("_category") or row.get("category") or ""
+        url = ("https://www.courtlistener.com" + absolute_url) if absolute_url else ""
 
         cases.append({
             "id": str(row.get("opinion_id", i)),

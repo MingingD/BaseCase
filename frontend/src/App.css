@@ -80,6 +80,8 @@ body {
 /* ── Disclaimer ──────────────────────────────────────────────────────────────── */
 
 .disclaimer-banner {
+  display: flex;
+  align-items: center;
   background: var(--color-disclaimer-bg);
   border: 1px solid var(--color-disclaimer-border);
   color: var(--color-disclaimer-text);

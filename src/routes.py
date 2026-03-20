@@ -80,6 +80,11 @@ def register_routes(app):
         sub_matrix = TFIDF_MATRIX[indices]
         sims = cosine_similarity(query_vec, sub_matrix).flatten()
 
+        # Normalize scores to relative probabilities (Daming's suggestion)
+        total = sims.sum()
+        if total > 0:
+            sims = sims / total
+
         # Top-5 by similarity
         top_k = min(5, len(indices))
         top_local = np.argsort(sims)[::-1][:top_k]
