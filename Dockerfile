@@ -24,6 +24,7 @@ COPY requirements.txt $CONTAINER_HOME/requirements.txt
 RUN pip install --no-cache-dir -r $CONTAINER_HOME/requirements.txt
 
 COPY src/ $CONTAINER_HOME/src/
+COPY query-classifier/ $CONTAINER_HOME/query-classifier/
 
 COPY --from=frontend-build /app/frontend/dist $CONTAINER_HOME/frontend/dist
 
