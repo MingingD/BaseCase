@@ -87,11 +87,17 @@ body {
   padding: 0.25rem 0.65rem;
   border: 1px solid;
   text-transform: uppercase;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
 }
 
-.pill-injury { color: var(--color-injury); border-color: var(--color-injury); }
+.pill-injury     { color: var(--color-injury);     border-color: var(--color-injury); }
 .pill-employment { color: var(--color-employment); border-color: var(--color-employment); }
-.pill-copyright { color: var(--color-copyright); border-color: var(--color-copyright); }
+.pill-copyright  { color: var(--color-copyright);  border-color: var(--color-copyright); }
+
+.pill-injury:hover,     .pill-injury.pill-active     { background-color: var(--color-injury);     color: var(--color-page-bg); }
+.pill-employment:hover, .pill-employment.pill-active { background-color: var(--color-employment); color: var(--color-page-bg); }
+.pill-copyright:hover,  .pill-copyright.pill-active  { background-color: var(--color-copyright);  color: var(--color-page-bg); }
 
 .search-row {
   display: flex;

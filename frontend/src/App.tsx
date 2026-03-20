@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import './App.css'
 import SearchIcon from './assets/mag.png'
 import { LegalCase, SearchResponse } from './types'
@@ -25,12 +25,6 @@ function App(): JSX.Element {
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
 
   const fetchResults = async (q: string, category: string | null): Promise<void> => {
-    if (!q.trim() && !category) {
-      setResults([])
-      setDetectedCategory(null)
-      setConfidence(null)
-      return
-    }
     const params = new URLSearchParams()
     if (q.trim()) params.set('q', q)
     if (category) params.set('category', category)
@@ -41,9 +35,12 @@ function App(): JSX.Element {
     setConfidence(data.confidence)
   }
 
+  useEffect(() => { fetchResults('', null) }, [])
+
   const handleSearch = (value: string): void => {
     setSearchTerm(value)
     fetchResults(value, activeCategory)
+    if (!value.trim()) setDetectedCategory(null)
   }
 
   const handlePillClick = (key: string): void => {

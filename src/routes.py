@@ -51,11 +51,10 @@ def register_routes(app):
         # Browse mode: pill clicked with no search query
         if not q:
             if category_param and category_param in CATEGORY_MAP:
-                cat_substr = CATEGORY_MAP[category_param]
                 category_cases = [
                     c for c in CASES
-                    if cat_substr.lower() in c.get("category", "").lower()
-                ][:5]
+                    if c.get("category", "") == category_param
+                ]
                 hits = [{
                     "case_name": c["case_name"],
                     "category": c.get("category", ""),
@@ -68,7 +67,15 @@ def register_routes(app):
                     "detected_category": CATEGORY_LABELS.get(category_param),
                     "confidence": None,
                 })
-            return jsonify({"results": [], "detected_category": None, "confidence": None})
+            # No query, no category — return all cases as default browse
+            hits = [{
+                "case_name": c["case_name"],
+                "category": c.get("category", ""),
+                "similarity": 1.0,
+                "snippet": c["text"][:300],
+                "url": c.get("url", ""),
+            } for c in CASES]
+            return jsonify({"results": hits, "detected_category": None, "confidence": None})
 
         # If a pill is active, force that category; otherwise classify the query
         if category_param and category_param in CATEGORY_MAP:
@@ -81,10 +88,9 @@ def register_routes(app):
 
         # filter by category
         if detected_category and detected_category in CATEGORY_MAP:
-            cat_substr = CATEGORY_MAP[detected_category]
             indices = [
                 i for i, c in enumerate(CASES)
-                if cat_substr.lower() in c.get("category", "").lower()
+                if c.get("category", "") == detected_category
             ]
             if not indices:
                 indices = list(range(len(CASES)))
