@@ -22,6 +22,7 @@ function App(): JSX.Element {
   const [results, setResults] = useState<LegalCase[]>([])
   const [detectedCategory, setDetectedCategory] = useState<string | null>(null)
   const [confidence, setConfidence] = useState<number | null>(null)
+  const [activatedDimensions, setActivatedDimensions] = useState<string[]>([])
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
 
   const fetchResults = async (q: string, category: string | null): Promise<void> => {
@@ -33,6 +34,7 @@ function App(): JSX.Element {
     setResults(data.results)
     setDetectedCategory(data.detected_category)
     setConfidence(data.confidence)
+    setActivatedDimensions(data.activated_dimensions ?? [])
   }
 
   useEffect(() => { fetchResults('', null) }, [])
@@ -40,7 +42,10 @@ function App(): JSX.Element {
   const handleSearch = (value: string): void => {
     setSearchTerm(value)
     fetchResults(value, activeCategory)
-    if (!value.trim()) setDetectedCategory(null)
+    if (!value.trim()) {
+      setDetectedCategory(null)
+      setActivatedDimensions([])
+    }
   }
 
   const handlePillClick = (key: string): void => {
@@ -95,6 +100,17 @@ function App(): JSX.Element {
           </p>
         )}
 
+        {activatedDimensions.length > 0 && (
+          <div className="query-explainability" aria-label="Query latent dimensions">
+            <span className="query-explainability-label">Query matches these themes (SVD):</span>
+            <ul className="query-explainability-list">
+              {activatedDimensions.map((dim, j) => (
+                <li key={j}>{dim}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         <div className="results-list">
           {results.map((c, i) => {
             const cat = categoryClass(c.category)
@@ -106,6 +122,16 @@ function App(): JSX.Element {
                 </div>
                 <h3 className="result-title">{c.case_name}</h3>
                 <p className="result-snippet">{c.snippet}</p>
+                {c.why && c.why.length > 0 && (
+                  <div className="why-this-result">
+                    <span className="why-label">Why this result?</span>
+                    <ul className="why-list">
+                      {c.why.map((line, k) => (
+                        <li key={k}>{line}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 {c.url && (
                   <a href={c.url} target="_blank" rel="noopener noreferrer" className="result-link">
                     view on CourtListener →

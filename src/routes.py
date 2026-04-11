@@ -3,8 +3,10 @@ import os
 import sys
 import numpy as np
 from flask import send_from_directory, request, jsonify
+from sklearn.decomposition import TruncatedSVD
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.preprocessing import normalize
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'query-classifier'))
 from classifier import RuleBasedLegalClassifier
@@ -14,10 +16,31 @@ cases_path = os.path.join(os.path.dirname(__file__), 'cases.json')
 with open(cases_path) as f:
     CASES = json.load(f)
 
-# build tfidf index over all cases
+# build TF-IDF + LSA (SVD) index over all cases
 corpus = [f"{c['case_name']} {c['text']}" for c in CASES]
 VECTORIZER = TfidfVectorizer(stop_words='english', max_features=10000)
 TFIDF_MATRIX = VECTORIZER.fit_transform(corpus)
+
+n_samples, n_features = TFIDF_MATRIX.shape
+# TruncatedSVD requires n_components < min(n_samples, n_features) for stable fits
+_max_k = min(100, n_samples, n_features)
+if _max_k >= n_samples:
+    _max_k = n_samples - 1
+SVD_K = max(2, _max_k) if n_samples > 2 else max(1, min(n_samples, n_features))
+
+SVD_MODEL = TruncatedSVD(n_components=SVD_K, random_state=42)
+SVD_MATRIX = SVD_MODEL.fit_transform(TFIDF_MATRIX)
+SVD_MATRIX = normalize(SVD_MATRIX)
+
+FEATURE_NAMES = VECTORIZER.get_feature_names_out()
+# Name latent dimensions by top loading terms (explainability)
+DIMENSION_LABELS = {}
+_n_label_dims = min(10, SVD_K)
+for i in range(_n_label_dims):
+    comp = SVD_MODEL.components_[i]
+    top_idx = comp.argsort()[-5:][::-1]
+    top_terms = [FEATURE_NAMES[j] for j in top_idx]
+    DIMENSION_LABELS[i] = f"Dimension {i}: {', '.join(top_terms)}"
 
 CLASSIFIER = RuleBasedLegalClassifier(category_keywords)
 
@@ -32,6 +55,27 @@ CATEGORY_LABELS = {
     'employment_labor': 'Employment Law',
     'copyright': 'Copyright',
 }
+
+
+def _query_svd_vector(q: str):
+    """TF-IDF -> SVD latent space, L2-normalized for cosine similarity."""
+    query_tfidf = VECTORIZER.transform([q])
+    q_svd = SVD_MODEL.transform(query_tfidf)
+    return normalize(q_svd)
+
+
+def _activated_dimension_labels(query_svd: np.ndarray, top_n: int = 3):
+    """Top latent dimensions by |activation| for 'Why this result?' explainability."""
+    vec = query_svd[0]
+    order = np.argsort(np.abs(vec))[::-1]
+    labels = []
+    for d in order:
+        if d >= _n_label_dims:
+            continue
+        if len(labels) >= top_n:
+            break
+        labels.append(DIMENSION_LABELS.get(d, f"Dimension {d}"))
+    return labels
 
 
 def register_routes(app):
@@ -61,11 +105,13 @@ def register_routes(app):
                     "similarity": 1.0,
                     "snippet": c["text"][:300],
                     "url": c.get("url", ""),
+                    "why": [],
                 } for c in category_cases]
                 return jsonify({
                     "results": hits,
                     "detected_category": CATEGORY_LABELS.get(category_param),
                     "confidence": None,
+                    "activated_dimensions": [],
                 })
             # No query, no category — return all cases as default browse
             hits = [{
@@ -74,8 +120,14 @@ def register_routes(app):
                 "similarity": 1.0,
                 "snippet": c["text"][:300],
                 "url": c.get("url", ""),
+                "why": [],
             } for c in CASES]
-            return jsonify({"results": hits, "detected_category": None, "confidence": None})
+            return jsonify({
+                "results": hits,
+                "detected_category": None,
+                "confidence": None,
+                "activated_dimensions": [],
+            })
 
         # If a pill is active, force that category; otherwise classify the query
         if category_param and category_param in CATEGORY_MAP:
@@ -98,9 +150,11 @@ def register_routes(app):
             detected_category = None
             indices = list(range(len(CASES)))
 
-        query_vec = VECTORIZER.transform([q])
-        sub_matrix = TFIDF_MATRIX[indices]
-        sims = cosine_similarity(query_vec, sub_matrix).flatten()
+        query_svd = _query_svd_vector(q)
+        activated_dimensions = _activated_dimension_labels(query_svd, top_n=3)
+
+        sub_matrix = SVD_MATRIX[indices]
+        sims = cosine_similarity(query_svd, sub_matrix).flatten()
 
         # normalize so scores add up to 1 (Daming's idea)
         total = sims.sum()
@@ -120,6 +174,7 @@ def register_routes(app):
                 "similarity": round(float(sims[local_idx]), 4),
                 "snippet": case["text"][:300],
                 "url": case.get("url", ""),
+                "why": list(activated_dimensions),
             })
 
         human_category = CATEGORY_LABELS.get(detected_category) if detected_category else None
@@ -127,6 +182,7 @@ def register_routes(app):
             "results": hits,
             "detected_category": human_category,
             "confidence": round(float(confidence), 4) if confidence is not None else None,
+            "activated_dimensions": activated_dimensions,
         })
 
     @app.route("/api/episodes")

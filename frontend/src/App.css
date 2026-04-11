@@ -150,6 +150,56 @@ body {
   color: var(--color-text-muted);
 }
 
+.query-explainability {
+  font-size: 0.72rem;
+  color: var(--color-text-secondary);
+  margin-bottom: 1.25rem;
+  padding: 0.65rem 0.85rem;
+  background: var(--color-card-bg);
+  border: 1px solid var(--color-border-light);
+  border-left: 3px solid var(--color-accent);
+}
+
+.query-explainability-label {
+  display: block;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-bottom: 0.4rem;
+  letter-spacing: 0.02em;
+}
+
+.query-explainability-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  line-height: 1.55;
+  font-style: italic;
+  color: var(--color-text-muted);
+}
+
+.why-this-result {
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
+  margin: 0.5rem 0 0.65rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--color-border-light);
+}
+
+.why-label {
+  display: block;
+  font-weight: 600;
+  font-style: normal;
+  color: var(--color-text-secondary);
+  margin-bottom: 0.35rem;
+  letter-spacing: 0.03em;
+}
+
+.why-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  line-height: 1.55;
+  font-style: italic;
+}
+
 .results-list {
   display: flex;
   flex-direction: column;
