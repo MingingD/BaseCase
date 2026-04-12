@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import './App.css'
 import SearchIcon from './assets/mag.png'
 import { ClassificationInfo, LegalCase, SearchResponse } from './types'
@@ -17,6 +17,9 @@ const PILL_CATEGORIES = [
   { label: 'Copyright',       key: 'copyright',        cls: 'copyright' },
 ]
 
+/** Max textarea height (px); beyond this, content scrolls inside the box */
+const SEARCH_INPUT_MAX_HEIGHT_PX = 176
+
 function App(): JSX.Element {
   const [searchTerm, setSearchTerm] = useState<string>('')
   const [results, setResults] = useState<LegalCase[]>([])
@@ -25,6 +28,7 @@ function App(): JSX.Element {
   const [activatedDimensions, setActivatedDimensions] = useState<string[]>([])
   const [activeCategories, setActiveCategories] = useState<string[]>([])
   const [classification, setClassification] = useState<ClassificationInfo | null>(null)
+  const searchInputRef = useRef<HTMLTextAreaElement>(null)
 
   const fetchResults = async (q: string, categories: string[]): Promise<void> => {
     const params = new URLSearchParams()
@@ -42,6 +46,13 @@ function App(): JSX.Element {
   }
 
   useEffect(() => { fetchResults('', []) }, [])
+
+  useEffect(() => {
+    const el = searchInputRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, SEARCH_INPUT_MAX_HEIGHT_PX)}px`
+  }, [searchTerm])
 
   const handleSearch = (value: string): void => {
     setSearchTerm(value)
@@ -90,11 +101,16 @@ function App(): JSX.Element {
 
         <div className="search-row">
           <img src={SearchIcon} alt="" className="search-icon" />
-          <input
+          <textarea
+            ref={searchInputRef}
+            className="search-input"
             placeholder="Describe your legal situation…"
             value={searchTerm}
             onChange={(e) => handleSearch(e.target.value)}
+            rows={1}
             autoFocus
+            spellCheck
+            aria-label="Describe your legal situation"
           />
         </div>
 
@@ -126,7 +142,10 @@ function App(): JSX.Element {
         )}
 
         {classification?.needs_user_category && searchTerm.trim() && (
-          <div className="classification-prompt" role="status">
+          <div
+            className={`classification-prompt${classification.status === 'no_match' ? ' classification-prompt-no-match' : ''}`}
+            role="status"
+          >
             <p className="classification-prompt-text">
               {classification.reason ??
                 'Select one or more categories above to mix cases from those areas.'}

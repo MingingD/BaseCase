@@ -8,7 +8,7 @@ export interface LegalCase {
   why?: string[]
 }
 
-/** Classifier + routing; `needs_user_category` only for low_confidence (pick pills) */
+/** Classifier + routing; `needs_user_category` prompts pills for low_confidence and no_match */
 export interface ClassificationInfo {
   status:
     | 'ok'

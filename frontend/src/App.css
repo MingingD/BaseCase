@@ -108,6 +108,7 @@ body {
 
 .search-row {
   display: flex;
+  align-items: flex-start;
   border: 1px solid var(--color-border);
   background: var(--color-card-bg);
   margin-bottom: 0.75rem;
@@ -118,18 +119,25 @@ body {
   outline: 2px solid #85395322;
 }
 
-.search-row input {
+.search-row .search-input {
   flex: 1;
   font-family: 'IBM Plex Mono', monospace;
   font-size: 0.9rem;
+  line-height: 1.45;
   padding: 0.75rem 1rem;
   border: none;
   outline: none;
   background: transparent;
   color: var(--color-text-primary);
+  min-height: 2.75rem;
+  max-height: 11rem;
+  resize: none;
+  overflow-y: auto;
+  box-sizing: border-box;
+  width: 100%;
 }
 
-.search-row input::placeholder {
+.search-row .search-input::placeholder {
   color: var(--color-text-muted);
 }
 
@@ -137,7 +145,7 @@ body {
   display: block;
   width: 16px;
   height: 16px;
-  margin: auto 0.85rem;
+  margin: 0.9rem 0.85rem 0;
   opacity: 0.45;
   flex-shrink: 0;
 }
@@ -182,6 +190,10 @@ body {
   margin-bottom: 0;
   line-height: 1.45;
   color: var(--color-text-primary);
+}
+
+.classification-prompt-no-match {
+  border-left: 3px solid var(--color-employment);
 }
 
 .query-explainability {
