@@ -1,7 +1,7 @@
 import re
 import math
-from typing import Dict, List, Any
-import pprint
+from typing import Any, Dict, List
+
 from keywords import category_keywords
 
 category_keywords = category_keywords
@@ -74,30 +74,51 @@ class RuleBasedLegalClassifier:
         results.sort(key=lambda x: x["normalized_score"], reverse=True)
         return results
 
-    def classify(self, query):
+    def classify(self, query) -> Dict[str, Any]:
+        """
+        Returns a stable shape for routing / API:
+          status: ok | no_match | low_confidence | ambiguous
+          category: str | None — single winner when status == ok
+          score: float | None — normalized confidence when status == ok
+          candidates: [{category, score}, ...] — tied or suggested categories
+          scores: full per-category breakdown (for debugging / tuning)
+        """
         scores = self.compute_scores(query)
-        
+
         if not scores or scores[0]["normalized_score"] == 0.0:
-            return {"action": "Please check your input or manually select your categories", 
-                    "reason": "No matches found, all scores are 0.", 
-                    "scores": scores}
-        
-        top_score = scores[0]["normalized_score"]
-    
-        if top_score < self.low_confidence_threshold:
             return {
-                "reason": f"Top score ({top_score:.3f}) is below confidence threshold.",
-                "action": "Please manually select your categories",
-                "scores": scores
+                "status": "no_match",
+                "reason": "No matches found, all scores are 0.",
+                "category": None,
+                "score": None,
+                "candidates": [],
+                "scores": scores,
+            }
+
+        top_score = scores[0]["normalized_score"]
+
+        if top_score < self.low_confidence_threshold:
+            candidates = [
+                {"category": s["category"], "score": s["normalized_score"]}
+                for s in scores[:3]
+                if s["normalized_score"] > 0
+            ]
+            return {
+                "status": "low_confidence",
+                "reason": (
+                    f"Top score ({top_score:.3f}) is below confidence threshold; "
+                    "pick a legal area to narrow results."
+                ),
+                "category": None,
+                "score": None,
+                "candidates": candidates,
+                "scores": scores,
             }
 
         selected_categories = []
-        
         for score_data in scores:
-                
             current_score = score_data["normalized_score"]
             current_cat = score_data["category"]
-            
             if (top_score - current_score) <= self.ambiguity_margin:
                 selected_categories.append((current_cat, current_score))
             else:
@@ -105,17 +126,26 @@ class RuleBasedLegalClassifier:
 
         if len(selected_categories) > 1:
             return {
-                "action": "Found multiple matched categories",
-                "reason": f"Found {len(selected_categories)} categories within the margin.",
-                "score": {item : "score: " + str(s) for item, s in selected_categories},
-                # "scores": scores
+                "status": "ambiguous",
+                "reason": (
+                    f"{len(selected_categories)} areas scored within the ambiguity margin; "
+                    "pick one to narrow results."
+                ),
+                "category": None,
+                "score": None,
+                "candidates": [
+                    {"category": c, "score": s} for c, s in selected_categories
+                ],
+                "scores": scores,
             }
 
         return {
-            "action": "Found best match",
+            "status": "ok",
+            "reason": None,
             "category": selected_categories[0][0],
             "score": top_score,
-            # "scores": score
+            "candidates": [],
+            "scores": scores,
         }
         
         
@@ -126,31 +156,31 @@ if __name__ == "__main__":
         ambiguity_margin=0.04
     )
 
-    queries = [
-    # base
-    "I slipped on a wet floor at the grocery store and hurt my back badly.",
+#     queries = [
+#     # base
+#     "I slipped on a wet floor at the grocery store and hurt my back badly.",
     
-    # no match
-    "I am having a serious dispute with my neighbor over the property line fence and I need to know if I can take them to civil court.",
+#     # no match
+#     "I am having a serious dispute with my neighbor over the property line fence and I need to know if I can take them to civil court.",
     
-    # low confidence
-    "I am looking for a new job because my current daily commute is getting way too long.",
+#     # low confidence
+#     "I am looking for a new job because my current daily commute is getting way too long.",
     
-    # two valid
-    "My boss fired me right after I got injured in a bad car accident.",
+#     # two valid
+#     "My boss fired me right after I got injured in a bad car accident.",
     
-    # one valid
-    "Can I use an open source MIT license for my software if I plan on commercial use?",
+#     # one valid
+#     "Can I use an open source MIT license for my software if I plan on commercial use?",
     
-    # three valid
-    "My boss threatened wrongful termination over my copyright software, and then I was injured at the store, leaving me with medical bills."
-]
+#     # three valid
+#     "My boss threatened wrongful termination over my copyright software, and then I was injured at the store, leaving me with medical bills."
+# ]
 
-    for q in queries:
-        result = classifier.classify(q)
-        print("-----------------------------------------------------------------------------")
-        print(q)
-        pprint.pprint(result)
+#     for q in queries:
+#         result = classifier.classify(q)
+#         print("-----------------------------------------------------------------------------")
+#         print(q)
+#         pprint.pprint(result)
     
     
     
