@@ -57,6 +57,65 @@ CATEGORY_LABELS = {
 }
 
 
+def _indices_for_category_keys(cat_keys):
+    """Case row indices whose category is in cat_keys; empty cat_keys means all."""
+    if not cat_keys:
+        return list(range(len(CASES)))
+    indices = [
+        i for i, c in enumerate(CASES)
+        if c.get("category", "") in cat_keys
+    ]
+    return indices if indices else list(range(len(CASES)))
+
+
+def _category_keys_from_request():
+    """Repeatable ?category= — order preserved, deduped, only known keys."""
+    seen = set()
+    keys = []
+    for raw in request.args.getlist("category"):
+        k = (raw or "").strip()
+        if k in CATEGORY_MAP and k not in seen:
+            seen.add(k)
+            keys.append(k)
+    return keys
+
+
+def _human_labels_for_keys(keys):
+    if not keys:
+        return None
+    return ", ".join(CATEGORY_LABELS.get(k, k) for k in keys)
+
+
+def _serialize_classification(
+    *,
+    status: str,
+    reason,
+    candidates_raw,
+    needs_user_category: bool,
+):
+    candidates = []
+    for c in candidates_raw or []:
+        key = c.get("category")
+        if key not in CATEGORY_MAP:
+            continue
+        score = c.get("score")
+        try:
+            score_f = round(float(score), 4)
+        except (TypeError, ValueError):
+            score_f = 0.0
+        candidates.append({
+            "key": key,
+            "label": CATEGORY_LABELS.get(key, key),
+            "score": score_f,
+        })
+    return {
+        "status": status,
+        "needs_user_category": bool(needs_user_category),
+        "reason": reason,
+        "candidates": candidates,
+    }
+
+
 def _query_svd_vector(q: str):
     """TF-IDF -> SVD latent space, L2-normalized for cosine similarity."""
     query_tfidf = VECTORIZER.transform([q])
@@ -90,14 +149,15 @@ def register_routes(app):
     @app.route("/api/search")
     def search():
         q = request.args.get("q", "").strip()
-        category_param = request.args.get("category", "").strip()
+        user_cat_keys = _category_keys_from_request()
 
-        # Browse mode: pill clicked with no search query
+        # Browse mode: pill(s) with no search query
         if not q:
-            if category_param and category_param in CATEGORY_MAP:
+            if user_cat_keys:
+                allow = set(user_cat_keys)
                 category_cases = [
                     c for c in CASES
-                    if c.get("category", "") == category_param
+                    if c.get("category", "") in allow
                 ]
                 hits = [{
                     "case_name": c["case_name"],
@@ -109,9 +169,15 @@ def register_routes(app):
                 } for c in category_cases]
                 return jsonify({
                     "results": hits,
-                    "detected_category": CATEGORY_LABELS.get(category_param),
+                    "detected_category": _human_labels_for_keys(user_cat_keys),
                     "confidence": None,
                     "activated_dimensions": [],
+                    "classification": _serialize_classification(
+                        status="browse",
+                        reason=None,
+                        candidates_raw=[],
+                        needs_user_category=False,
+                    ),
                 })
             # No query, no category — return all cases as default browse
             hits = [{
@@ -127,28 +193,81 @@ def register_routes(app):
                 "detected_category": None,
                 "confidence": None,
                 "activated_dimensions": [],
+                "classification": _serialize_classification(
+                    status="browse",
+                    reason=None,
+                    candidates_raw=[],
+                    needs_user_category=False,
+                ),
             })
 
-        # If a pill is active, force that category; otherwise classify the query
-        if category_param and category_param in CATEGORY_MAP:
-            detected_category = category_param
+        # User chose one or more categories — skip classifier, union those buckets
+        if user_cat_keys:
             confidence = None
+            classification = _serialize_classification(
+                status="user_selected",
+                reason=None,
+                candidates_raw=[],
+                needs_user_category=False,
+            )
+            indices = _indices_for_category_keys(user_cat_keys)
+            detected_category = None
+            human_category = _human_labels_for_keys(user_cat_keys)
         else:
             result = CLASSIFIER.classify(q)
+            status = result.get("status", "ok")
             detected_category = result.get("category")
             confidence = result.get("score")
+            human_category = None
 
-        # filter by category
-        if detected_category and detected_category in CATEGORY_MAP:
-            indices = [
-                i for i, c in enumerate(CASES)
-                if c.get("category", "") == detected_category
-            ]
-            if not indices:
+            if status == "ok" and detected_category in CATEGORY_MAP:
+                indices = _indices_for_category_keys([detected_category])
+                classification = _serialize_classification(
+                    status="ok",
+                    reason=result.get("reason"),
+                    candidates_raw=result.get("candidates"),
+                    needs_user_category=False,
+                )
+                human_category = CATEGORY_LABELS.get(detected_category)
+            elif status == "ambiguous":
+                detected_category = None
+                confidence = None
+                keys = [c["category"] for c in (result.get("candidates") or [])]
+                indices = _indices_for_category_keys(keys)
+                human_category = _human_labels_for_keys(keys)
+                classification = _serialize_classification(
+                    status="ambiguous",
+                    reason=(
+                        "Several legal areas matched; results mix cases from each."
+                    ),
+                    candidates_raw=result.get("candidates"),
+                    needs_user_category=False,
+                )
+            elif status == "low_confidence":
+                detected_category = None
+                confidence = None
+                keys = [c["category"] for c in (result.get("candidates") or [])]
+                indices = _indices_for_category_keys(keys)
+                classification = _serialize_classification(
+                    status="low_confidence",
+                    reason=(
+                        "Keyword signal is weak — select one or more categories "
+                        "above to mix cases from those areas."
+                    ),
+                    candidates_raw=result.get("candidates"),
+                    needs_user_category=True,
+                )
+            else:
+                # no_match or unknown fallback
+                detected_category = None
+                confidence = None
                 indices = list(range(len(CASES)))
-        else:
-            detected_category = None
-            indices = list(range(len(CASES)))
+                classification = _serialize_classification(
+                    status="no_match",
+                    reason=result.get("reason"),
+                    candidates_raw=result.get("candidates"),
+                    needs_user_category=False,
+                )
 
         query_svd = _query_svd_vector(q)
         activated_dimensions = _activated_dimension_labels(query_svd, top_n=3)
@@ -177,12 +296,12 @@ def register_routes(app):
                 "why": list(activated_dimensions),
             })
 
-        human_category = CATEGORY_LABELS.get(detected_category) if detected_category else None
         return jsonify({
             "results": hits,
             "detected_category": human_category,
             "confidence": round(float(confidence), 4) if confidence is not None else None,
             "activated_dimensions": activated_dimensions,
+            "classification": classification,
         })
 
     @app.route("/api/episodes")
