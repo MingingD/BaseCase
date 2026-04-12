@@ -13,6 +13,8 @@ class RuleBasedLegalClassifier:
         category_keywords,
         low_confidence_threshold=0.02,
         ambiguity_ratio=0.82,
+        secondary_ambiguity_min_score=0.022,
+        secondary_ambiguity_fraction_of_top=0.24,
     ):
         """
         category_keywords:
@@ -23,10 +25,17 @@ class RuleBasedLegalClassifier:
 
         ambiguity_ratio:
             categories with score >= top_score * ratio count as tied with the leader.
+
+        secondary_ambiguity_* (hybrid):
+            If only one category sits inside the ratio band but the runner-up still has
+            a meaningful normalized score and is at least a fraction of the winner,
+            treat as ambiguous (two-category stories like FMLA + surgery).
         """
         self.category_keywords = category_keywords
         self.low_confidence_threshold = low_confidence_threshold
         self.ambiguity_ratio = ambiguity_ratio
+        self.secondary_ambiguity_min_score = secondary_ambiguity_min_score
+        self.secondary_ambiguity_fraction_of_top = secondary_ambiguity_fraction_of_top
 
         self.category_scales = {}
         for category, keywords in self.category_keywords.items():
@@ -157,6 +166,26 @@ class RuleBasedLegalClassifier:
                 "scores": scores,
             }
 
+        # Hybrid ambiguity: one clear ratio-band winner, but #2 still has real keyword mass
+        if len(scores) >= 2:
+            s0 = float(scores[0]["normalized_score"])
+            s1 = float(scores[1]["normalized_score"])
+            if s1 > 0 and s1 >= self.secondary_ambiguity_min_score:
+                if s1 >= self.secondary_ambiguity_fraction_of_top * s0:
+                    return {
+                        "status": "ambiguous",
+                        "reason": (
+                            "Top area is ahead, but a second area also has clear keyword support."
+                        ),
+                        "category": None,
+                        "score": None,
+                        "candidates": [
+                            {"category": scores[0]["category"], "score": s0},
+                            {"category": scores[1]["category"], "score": s1},
+                        ],
+                        "scores": scores,
+                    }
+
         return {
             "status": "ok",
             "reason": None,
@@ -179,6 +208,8 @@ CLASSIFIER_TEST_CASES: List[Dict[str, str]] = [
     {"query": "My employer fired me the day after I filed an OSHA complaint; feels like retaliation.", "expected_label": "employment_labor"},
     {"query": "Not paid overtime for 60-hour weeks; they misclassified me as exempt.", "expected_label": "employment_labor"},
     {"query": "Hostile work environment and sexual harassment by my supervisor; thinking about EEOC.", "expected_label": "employment_labor"},
+    # Hybrid ambiguity: strong employment + meaningful PI (surgery) but outside ratio band.
+    {"query": "I was fired the week I came back from FMLA after my knee surgery; is that wrongful termination?", "expected_label": "ambiguous"},
     {"query": "Can I use MIT-licensed code in a commercial SaaS if I keep the license notice?", "expected_label": "copyright"},
     {"query": "Received a DMCA takedown for my app; I think it is fair use.", "expected_label": "copyright"},
     {"query": "Forked a GPL project and sold a hosted version without sharing source—what is the risk?", "expected_label": "copyright"},
