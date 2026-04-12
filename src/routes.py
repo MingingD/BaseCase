@@ -264,9 +264,11 @@ def register_routes(app):
                 indices = list(range(len(CASES)))
                 classification = _serialize_classification(
                     status="no_match",
-                    reason=result.get("reason"),
+                    reason=(
+                        "Enter more detail, or select the legal areas you want above."
+                    ),
                     candidates_raw=result.get("candidates"),
-                    needs_user_category=False,
+                    needs_user_category=True,
                 )
 
         query_svd = _query_svd_vector(q)
