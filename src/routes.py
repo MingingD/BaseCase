@@ -124,7 +124,7 @@ def _query_svd_vector(q: str):
 
 
 def _activated_dimension_labels(query_svd: np.ndarray, top_n: int = 3):
-    """Top latent dimensions by |activation| for 'Why this result?' explainability."""
+    """Top latent dimensions by |query activation| — same for every hit (query-only signal)."""
     vec = query_svd[0]
     order = np.argsort(np.abs(vec))[::-1]
     labels = []
@@ -135,6 +135,125 @@ def _activated_dimension_labels(query_svd: np.ndarray, top_n: int = 3):
             break
         labels.append(DIMENSION_LABELS.get(d, f"Dimension {d}"))
     return labels
+
+
+def _per_hit_latent_overlap_labels(
+    query_vec: np.ndarray,
+    doc_vec: np.ndarray,
+    top_n: int = 3,
+):
+    """
+    Latent dimensions ranked by contribution q_i * d_i to cosine(query, doc).
+    L2-normalized rows => cosine = dot product, so this is per-dimension match strength.
+    Differs per opinion; only dimensions we label in DIMENSION_LABELS are returned.
+    """
+    q = np.asarray(query_vec, dtype=float).reshape(-1)
+    d = np.asarray(doc_vec, dtype=float).reshape(-1)
+    if q.size != d.size or q.size == 0:
+        return []
+    contrib = q * d
+    cap = min(int(contrib.shape[0]), _n_label_dims)
+    if cap <= 0:
+        return []
+    order = np.argsort(-contrib[:cap])
+    labels = []
+    for dim in order:
+        if len(labels) >= top_n:
+            break
+        if abs(float(contrib[dim])) < 1e-10:
+            continue
+        labels.append(DIMENSION_LABELS.get(int(dim), f"Dimension {int(dim)}"))
+    return labels
+
+
+def _sentence_aware_prefix(text: str, max_len: int = 320) -> str:
+    """Browse / fallback: prefer breaking at sentence or word, not mid-token."""
+    t = (text or "").strip()
+    if len(t) <= max_len:
+        return t
+    window = t[:max_len]
+    for sep in (". ", "? ", "! ", "\n"):
+        idx = window.rfind(sep)
+        if idx > max_len // 4:
+            return (t[: idx + len(sep)].strip() + "…")
+    sp = window.rfind(" ")
+    if sp > 40:
+        return t[:sp].rstrip() + "…"
+    return window.rstrip() + "…"
+
+
+def _iter_text_windows(text: str, window_chars: int = 420, stride: int = 140):
+    """Overlapping spans for query-aligned excerpt selection."""
+    t = (text or "").strip()
+    n = len(t)
+    if n == 0:
+        return
+    if n <= window_chars:
+        yield 0, t
+        return
+    start = 0
+    while start < n:
+        end = min(start + window_chars, n)
+        yield start, t[start:end]
+        if end >= n:
+            break
+        next_start = start + stride
+        if next_start < n:
+            sp = t.find(" ", next_start)
+            if sp != -1 and sp < next_start + 50:
+                next_start = sp + 1
+        start = next_start
+
+
+def _trim_chunk_at_word(chunk: str, max_out: int = 380) -> str:
+    excerpt = chunk.strip()
+    if len(excerpt) <= max_out:
+        return excerpt
+    excerpt = excerpt[:max_out]
+    sp = excerpt.rfind(" ")
+    if sp > max_out // 2:
+        excerpt = excerpt[:sp]
+    return excerpt.rstrip() + "…"
+
+
+def _best_snippet_for_query(
+    text: str,
+    query_tfidf,
+    *,
+    window_chars: int = 420,
+    stride: int = 140,
+    max_out: int = 380,
+    min_cos: float = 0.001,
+):
+    """
+    Pick the text window whose TF-IDF vector is most similar to the query.
+    Returns (snippet, snippet_is_excerpt). Falls back to sentence-aware prefix
+    when the document is short or similarity is negligible.
+    """
+    t = (text or "").strip()
+    if not t:
+        return "", False
+
+    windows = list(_iter_text_windows(t, window_chars, stride))
+    if not windows:
+        return _sentence_aware_prefix(t, max_out), False
+
+    chunk_texts = [w[1] for w in windows]
+    if not chunk_texts:
+        return _sentence_aware_prefix(t, max_out), False
+
+    W = VECTORIZER.transform(chunk_texts)
+    sims = cosine_similarity(query_tfidf, W).flatten()
+    best_i = int(np.argmax(sims))
+    best_cos = float(sims[best_i])
+
+    if best_cos < min_cos or not np.isfinite(best_cos):
+        return _sentence_aware_prefix(t, max_out), False
+
+    start, chunk = windows[best_i]
+    body = _trim_chunk_at_word(chunk, max_out)
+    prefix = "… " if start > 0 else ""
+    return prefix + body, True
 
 
 def register_routes(app):
@@ -163,7 +282,8 @@ def register_routes(app):
                     "case_name": c["case_name"],
                     "category": c.get("category", ""),
                     "similarity": 1.0,
-                    "snippet": c["text"][:300],
+                    "snippet": _sentence_aware_prefix(c.get("text") or "", 320),
+                    "snippet_is_excerpt": False,
                     "url": c.get("url", ""),
                     "why": [],
                 } for c in category_cases]
@@ -184,7 +304,8 @@ def register_routes(app):
                 "case_name": c["case_name"],
                 "category": c.get("category", ""),
                 "similarity": 1.0,
-                "snippet": c["text"][:300],
+                "snippet": _sentence_aware_prefix(c.get("text") or "", 320),
+                "snippet_is_excerpt": False,
                 "url": c.get("url", ""),
                 "why": [],
             } for c in CASES]
@@ -272,6 +393,7 @@ def register_routes(app):
                 )
 
         query_svd = _query_svd_vector(q)
+        q_tfidf_snippet = VECTORIZER.transform([q])
         activated_dimensions = _activated_dimension_labels(query_svd, top_n=3)
 
         sub_matrix = SVD_MATRIX[indices]
@@ -282,20 +404,27 @@ def register_routes(app):
         if total > 0:
             sims = sims / total
 
-        top_k = min(5, len(indices))
+        top_k = min(10, len(indices))
         top_local = np.argsort(sims)[::-1][:top_k]
 
         hits = []
         for local_idx in top_local:
             global_idx = indices[local_idx]
             case = CASES[global_idx]
+            snip, is_excerpt = _best_snippet_for_query(
+                case.get("text") or "",
+                q_tfidf_snippet,
+            )
+            doc_svd = np.asarray(SVD_MATRIX[global_idx]).reshape(-1)
+            why_hit = _per_hit_latent_overlap_labels(query_svd[0], doc_svd, top_n=3)
             hits.append({
                 "case_name": case["case_name"],
                 "category": case.get("category", ""),
                 "similarity": round(float(sims[local_idx]), 4),
-                "snippet": case["text"][:300],
+                "snippet": snip,
+                "snippet_is_excerpt": is_excerpt,
                 "url": case.get("url", ""),
-                "why": list(activated_dimensions),
+                "why": why_hit,
             })
 
         return jsonify({

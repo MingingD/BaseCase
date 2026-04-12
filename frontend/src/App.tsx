@@ -155,7 +155,7 @@ function App(): JSX.Element {
 
         {activatedDimensions.length > 0 && (
           <div className="query-explainability" aria-label="Query latent dimensions">
-            <span className="query-explainability-label">Query matches these themes (SVD):</span>
+            <span className="query-explainability-label">Strongest query themes (SVD, query only):</span>
             <ul className="query-explainability-list">
               {activatedDimensions.map((dim, j) => (
                 <li key={j}>{dim}</li>
@@ -174,10 +174,13 @@ function App(): JSX.Element {
                   <span className="similarity-score">match: {(c.similarity * 100).toFixed(0)}%</span>
                 </div>
                 <h3 className="result-title">{c.case_name}</h3>
+                {c.snippet_is_excerpt && (
+                  <p className="snippet-excerpt-hint">Excerpt aligned to your search</p>
+                )}
                 <p className="result-snippet">{c.snippet}</p>
                 {c.why && c.why.length > 0 && (
                   <div className="why-this-result">
-                    <span className="why-label">Why this result?</span>
+                    <span className="why-label">Why this match? (shared latent themes)</span>
                     <ul className="why-list">
                       {c.why.map((line, k) => (
                         <li key={k}>{line}</li>

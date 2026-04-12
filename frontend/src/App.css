@@ -298,6 +298,14 @@ body {
   line-height: 1.4;
 }
 
+.snippet-excerpt-hint {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+  margin: -0.25rem 0 0.4rem;
+}
+
 .result-snippet {
   font-size: 0.78rem;
   color: var(--color-text-secondary);

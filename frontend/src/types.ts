@@ -4,6 +4,8 @@ export interface LegalCase {
   similarity: number
   snippet: string
   url: string
+  /** True when snippet is a TF-IDF-aligned excerpt from the opinion, not a prefix */
+  snippet_is_excerpt?: boolean
   /** SVD latent dimensions activated for this query (explainability) */
   why?: string[]
 }
