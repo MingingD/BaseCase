@@ -121,6 +121,9 @@ function App(): JSX.Element {
                   <span className="similarity-score">match: {(c.similarity * 100).toFixed(0)}%</span>
                 </div>
                 <h3 className="result-title">{c.case_name}</h3>
+                {searchTerm.trim() && (
+                  <p className="snippet-label">EXCERPT ALIGNED TO YOUR SEARCH</p>
+                )}
                 <p className="result-snippet">{c.snippet}</p>
                 {c.why && c.why.length > 0 && (
                   <div className="why-this-result">

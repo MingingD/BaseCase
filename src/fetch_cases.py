@@ -9,7 +9,7 @@ from datasets import load_dataset
 output_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cases.json')
 
 print("loading dataset...")
-ds = load_dataset("mkezhng/courtlistenercases", split="train")
+ds = load_dataset("mkezhng/courtlistenercases4", split="train")
 print(f"got {len(ds)} records")
 
 cases = []

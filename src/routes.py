@@ -65,7 +65,7 @@ def _query_svd_vector(q: str):
 
 
 def _activated_dimension_labels(query_svd: np.ndarray, top_n: int = 3):
-    """Top latent dimensions by |activation| for 'Why this result?' explainability."""
+    """Top latent dimensions by |activation|, with +/- sign, for query-level explainability."""
     vec = query_svd[0]
     order = np.argsort(np.abs(vec))[::-1]
     labels = []
@@ -74,8 +74,43 @@ def _activated_dimension_labels(query_svd: np.ndarray, top_n: int = 3):
             continue
         if len(labels) >= top_n:
             break
-        labels.append(DIMENSION_LABELS.get(d, f"Dimension {d}"))
+        sign = '+' if vec[d] >= 0 else '-'
+        labels.append(f"({sign}) {DIMENSION_LABELS.get(d, f'Dimension {d}')}")
     return labels
+
+
+def _per_result_why(query_svd: np.ndarray, doc_vec: np.ndarray, top_n: int = 3):
+    """Dimensions with highest shared activation magnitude between query and document.
+
+    Sign prefix shows whether both activate the dimension in the same direction (+)
+    or opposite directions (-), matching the contribution to cosine similarity.
+    """
+    q_vec = query_svd[0]
+    # element-wise product: positive = same direction, negative = opposing
+    product = q_vec * doc_vec
+    order = np.argsort(np.abs(product))[::-1]
+    labels = []
+    for d in order:
+        if d >= _n_label_dims:
+            continue
+        if len(labels) >= top_n:
+            break
+        sign = '+' if product[d] >= 0 else '-'
+        labels.append(f"({sign}) {DIMENSION_LABELS.get(d, f'Dimension {d}')}")
+    return labels
+
+
+def _best_snippet(text: str, query_tfidf, window: int = 400, step: int = 100) -> str:
+    """Return the window of `text` most similar to the query by TF-IDF cosine similarity."""
+    if len(text) <= window:
+        return text
+    best_score, best = -1.0, text[:window]
+    for start in range(0, len(text) - window + 1, step):
+        chunk = text[start:start + window]
+        score = float(cosine_similarity(query_tfidf, VECTORIZER.transform([chunk]))[0, 0])
+        if score > best_score:
+            best_score, best = score, chunk
+    return best
 
 
 def register_routes(app):
@@ -151,15 +186,11 @@ def register_routes(app):
             indices = list(range(len(CASES)))
 
         query_svd = _query_svd_vector(q)
+        query_tfidf = VECTORIZER.transform([q])
         activated_dimensions = _activated_dimension_labels(query_svd, top_n=3)
 
         sub_matrix = SVD_MATRIX[indices]
         sims = cosine_similarity(query_svd, sub_matrix).flatten()
-
-        # normalize so scores add up to 1 (Daming's idea)
-        total = sims.sum()
-        if total > 0:
-            sims = sims / total
 
         top_k = min(5, len(indices))
         top_local = np.argsort(sims)[::-1][:top_k]
@@ -168,13 +199,14 @@ def register_routes(app):
         for local_idx in top_local:
             global_idx = indices[local_idx]
             case = CASES[global_idx]
+            doc_vec = SVD_MATRIX[global_idx]
             hits.append({
                 "case_name": case["case_name"],
                 "category": case.get("category", ""),
                 "similarity": round(float(sims[local_idx]), 4),
-                "snippet": case["text"][:300],
+                "snippet": _best_snippet(case["text"], query_tfidf),
                 "url": case.get("url", ""),
-                "why": list(activated_dimensions),
+                "why": _per_result_why(query_svd, doc_vec),
             })
 
         human_category = CATEGORY_LABELS.get(detected_category) if detected_category else None
