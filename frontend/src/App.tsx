@@ -87,6 +87,9 @@ function App(): JSX.Element {
             placeholder="Describe your legal situation…"
             value={searchTerm}
             onChange={(e) => handleSearch(e.target.value)}
+            onPaste={(e) => {
+              setTimeout(() => handleSearch((e.target as HTMLInputElement).value), 0)
+            }}
             autoFocus
           />
         </div>
