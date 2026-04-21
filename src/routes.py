@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'query-classifi
 from classifier import RuleBasedLegalClassifier
 from keywords import category_keywords
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'llmRAG'))
-from rag import run_case_rag
+from rag import run_case_rag, run_case_rag_chat
 
 cases_path = os.path.join(os.path.dirname(__file__), 'cases.json')
 with open(cases_path) as f:
@@ -513,6 +513,39 @@ def register_routes(app):
             return jsonify({"error": "Selected case has no opinion text"}), 422
 
         answer = run_case_rag(user_query, case_context, case.get("case_name") or case_name)
+        return jsonify({
+            "answer": answer,
+            "case_name": case.get("case_name") or case_name,
+        })
+
+    @app.route("/api/case-rag-chat", methods=["POST"])
+    def case_rag_chat():
+        payload = request.get_json(silent=True) or {}
+        case_idx = payload.get("case_idx")
+        case_name = (payload.get("case_name") or "").strip()
+        user_query = (payload.get("user_query") or "").strip()
+        snippet = (payload.get("snippet") or "").strip()
+        messages = payload.get("messages") or []
+
+        if case_idx is None and not case_name:
+            return jsonify({"error": "Missing required field: case_idx or case_name"}), 400
+        if not user_query:
+            return jsonify({"error": "Missing required field: user_query"}), 400
+        if not isinstance(messages, list) or len(messages) == 0:
+            return jsonify({"error": "Missing required field: messages"}), 400
+
+        case = _resolve_case_by_idx(case_idx)
+        if not case and case_name:
+            case = _resolve_case_by_name(case_name)
+        if not case:
+            return jsonify({"error": "Case not found for provided identifier"}), 404
+
+        answer = run_case_rag_chat(
+            user_query=user_query,
+            case_name=case.get("case_name") or case_name,
+            snippet=snippet,
+            messages=messages,
+        )
         return jsonify({
             "answer": answer,
             "case_name": case.get("case_name") or case_name,

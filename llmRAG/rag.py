@@ -18,6 +18,17 @@ if not key:
 client = LLMClient(api_key=key)
 
 
+def _safe_chat(prompt):
+    try:
+        response = client.chat(prompt, stream=False, show_thinking=False)
+        content = response.get("content")
+        if content is None:
+            return "The model returned no text. Try again."
+        return content
+    except Exception as e:
+        return f"Could not get a model response ({type(e).__name__}). Try again later."
+
+
 def run_case_rag(user_query: str, case_context: str, case_name: str) -> str:
     q = (user_query or "").strip()
     ctx = (case_context or "").strip()
@@ -70,14 +81,55 @@ One sentence: informational only; not legal advice.
         },
     ]
 
-    try:
-        response = client.chat(prompt, stream=False, show_thinking=False)
-        content = response.get("content")
-        if content is None:
-            return "The model returned no text. Try again."
-        return content
-    except Exception as e:
-        return f"Could not get a model response ({type(e).__name__}). Try again later."
+    return _safe_chat(prompt)
+
+
+def run_case_rag_chat(
+    *,
+    user_query: str,
+    case_name: str,
+    snippet: str,
+    messages,
+) -> str:
+    q = (user_query or "").strip()
+    name = (case_name or "").strip() or "Unknown case"
+    snip = (snippet or "").strip()
+    turns = list(messages or [])
+    if not turns:
+        return "No chat messages were provided."
+
+    sanitized = []
+    for m in turns:
+        role = (m.get("role") or "").strip()
+        content = (m.get("content") or "").strip()
+        if role not in ("user", "assistant"):
+            continue
+        if not content:
+            continue
+        sanitized.append({"role": role, "content": content})
+    if not sanitized:
+        return "No valid chat messages were provided."
+
+    context_block = snip if snip else "No excerpt was provided."
+    rag_chat_system = f"""
+You are a legal deep-dive assistant continuing an existing case-specific conversation.
+
+Case caption: {name}
+Original user query: {q}
+
+Grounding context:
+{context_block}
+
+Rules:
+- Continue the conversation naturally; do not restart from scratch.
+- Ground statements in the provided case context/excerpt and conversation history.
+- If support is weak, explicitly label inference vs direct support.
+- Keep answers concise but useful for follow-up discussion.
+- Do not give personal legal advice; this is informational only.
+""".strip()
+
+    prompt = [{"role": "system", "content": rag_chat_system}] + sanitized
+    return _safe_chat(prompt)
 
 
 if __name__ == "__main__":
