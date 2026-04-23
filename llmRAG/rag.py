@@ -55,7 +55,6 @@ Rules:
 - Do not invent facts, names, dates, or outcomes.
 - Do not answer the question.
 - Output one line only, plain text.
-- Keep it with similar length to the original query.
 """.strip()
 
     prompt = [
