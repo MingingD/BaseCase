@@ -18,15 +18,57 @@ if not key:
 client = LLMClient(api_key=key)
 
 
-def _safe_chat(prompt):
+def _chat_or_none(prompt):
     try:
         response = client.chat(prompt, stream=False, show_thinking=False)
         content = response.get("content")
         if content is None:
-            return "The model returned no text. Try again."
-        return content
-    except Exception as e:
-        return f"Could not get a model response ({type(e).__name__}). Try again later."
+            return None
+        text = str(content).strip()
+        return text or None
+    except Exception:
+        return None
+
+
+def _safe_chat(prompt):
+    text = _chat_or_none(prompt)
+    if text is not None:
+        return text
+    return "Could not get a model response (LLMClientError). Try again later."
+
+
+def rewrite_query_for_retrieval(user_query: str) -> str:
+    """
+    Rewrite user query into a retrieval-focused legal search string.
+    Falls back to the original query if the rewrite fails.
+    """
+    q = (user_query or "").strip()
+    if not q:
+        return ""
+
+    system = """
+You rewrite legal user queries for retrieval only.
+
+Rules:
+- Preserve intent, facts, and legal issue.
+- Improve searchability with concise legal terms and common synonyms.
+- Do not invent facts, names, dates, or outcomes.
+- Do not answer the question.
+- Output one line only, plain text.
+- Keep it with similar length to the original query.
+""".strip()
+
+    prompt = [
+        {"role": "system", "content": system},
+        {
+            "role": "user",
+            "content": f"Original user query:\n{q}\n\nRewritten retrieval query:",
+        },
+    ]
+    rewritten = _chat_or_none(prompt)
+    if not rewritten:
+        return q
+    return " ".join(rewritten.split())[:280] or q
 
 
 def run_case_rag(user_query: str, case_context: str, case_name: str) -> str:

@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'query-classifi
 from classifier import RuleBasedLegalClassifier
 from keywords import category_keywords
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'llmRAG'))
-from rag import run_case_rag, run_case_rag_chat
+from rag import run_case_rag, run_case_rag_chat, rewrite_query_for_retrieval
 
 cases_path = os.path.join(os.path.dirname(__file__), 'cases.json')
 with open(cases_path) as f:
@@ -165,6 +165,11 @@ def _query_svd_vector(q: str):
     return normalize(q_svd)
 
 
+def _wants_query_rewrite() -> bool:
+    raw = (request.args.get("rewrite", "") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 def _activated_dimension_labels(query_svd: np.ndarray, top_n: int = 3):
     """Top latent dimensions by |activation|, with +/- sign, for query-level explainability."""
     vec = query_svd[0]
@@ -313,6 +318,9 @@ def register_routes(app):
     @app.route("/api/search")
     def search():
         q = request.args.get("q", "").strip()
+        use_rewrite = _wants_query_rewrite()
+        effective_q = rewrite_query_for_retrieval(q) if q and use_rewrite else q
+        rewrite_applied = bool(q and use_rewrite and effective_q and effective_q != q)
         user_cat_keys = _category_keys_from_request()
 
         # Browse mode: pill(s) with no search query
@@ -382,7 +390,7 @@ def register_routes(app):
             detected_category = None
             human_category = _human_labels_for_keys(user_cat_keys)
         else:
-            result = CLASSIFIER.classify(q)
+            result = CLASSIFIER.classify(effective_q)
             status = result.get("status", "ok")
             detected_category = result.get("category")
             raw_conf = result.get("score")
@@ -440,8 +448,8 @@ def register_routes(app):
                     needs_user_category=True,
                 )
 
-        query_svd = _query_svd_vector(q)
-        q_tfidf_snippet = VECTORIZER.transform([q])
+        query_svd = _query_svd_vector(effective_q)
+        q_tfidf_snippet = VECTORIZER.transform([effective_q])
         activated_dimensions = _activated_dimension_labels(query_svd, top_n=3)
 
         sub_matrix = SVD_MATRIX[indices]
@@ -482,6 +490,8 @@ def register_routes(app):
             "confidence": round(float(confidence), 4) if confidence is not None else None,
             "activated_dimensions": activated_dimensions,
             "classification": classification,
+            "query_used_for_retrieval": effective_q,
+            "query_rewrite_applied": rewrite_applied,
         })
 
     @app.route("/api/episodes")
